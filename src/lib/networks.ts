@@ -22,6 +22,17 @@ export const NETWORKS: Network[] = [
     decimals: 18,
   },
   {
+    id: 'tron',
+    name: 'TRON',
+    symbol: 'TRX',
+    rpcUrl: 'https://api.trongrid.io',
+    chainId: 728126428,
+    explorerUrl: 'https://tronscan.org',
+    iconColor: '#FF0013',
+    decimals: 6,
+    isNonEvm: true,
+  },
+  {
     id: 'polygon',
     name: 'Polygon',
     symbol: 'MATIC',
@@ -124,6 +135,18 @@ export const NETWORKS: Network[] = [
     decimals: 18,
     isTestnet: true,
   },
+  {
+    id: 'tron-shasta',
+    name: 'TRON Shasta Testnet',
+    symbol: 'TRX',
+    rpcUrl: 'https://api.shasta.trongrid.io',
+    chainId: 2494104990,
+    explorerUrl: 'https://shasta.tronscan.org',
+    iconColor: '#FF0013',
+    decimals: 6,
+    isTestnet: true,
+    isNonEvm: true,
+  },
 ];
 
 export const getNetworkById = (id: string): Network | undefined => {
@@ -140,4 +163,16 @@ export const getMainnets = (): Network[] => {
 
 export const getTestnets = (): Network[] => {
   return NETWORKS.filter(network => network.isTestnet);
+};
+
+export const getEvmNetworks = (): Network[] => {
+  return NETWORKS.filter(network => !network.isNonEvm);
+};
+
+export const getNonEvmNetworks = (): Network[] => {
+  return NETWORKS.filter(network => network.isNonEvm);
+};
+
+export const isTronNetwork = (networkId: string): boolean => {
+  return networkId === 'tron' || networkId === 'tron-shasta';
 };
