@@ -1,0 +1,40 @@
+{
+  "name": "Nova Wallet",
+  "short_name": "NovaWallet",
+  "description": "Tu wallet de criptomonedas segura y facil de usar. Multi-chain, no custodial.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#a855f7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "utilities"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Send",
+      "short_name": "Send",
+      "description": "Send crypto",
+      "url": "/?action=send"
+    },
+    {
+      "name": "Receive",
+      "short_name": "Receive",
+      "description": "Receive crypto",
+      "url": "/?action=receive"
+    }
+  ]
+}
