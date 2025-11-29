@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { Account, Transaction, EncryptedVault } from '@/types';
+import { Account, Transaction } from '@/types';
 import { storage } from '@/lib/storage';
 import { encryptMnemonic, decryptMnemonic } from '@/lib/crypto';
 import {
@@ -11,12 +11,20 @@ import {
   getBalance,
   sendTransaction as sendTx,
 } from '@/lib/wallet';
+import { isTronNetwork } from '@/lib/networks';
+import {
+  createTronWalletFromMnemonic,
+  getTronBalance,
+  sendTronTransaction,
+} from '@/lib/tron';
+import { fetchTransactions } from '@/lib/explorer';
 
 interface WalletStore {
   // State
   isInitialized: boolean;
   isUnlocked: boolean;
   isLoading: boolean;
+  isLoadingTx: boolean;
   mnemonic: string | null;
   accounts: Account[];
   currentAccountIndex: number;
@@ -34,6 +42,7 @@ interface WalletStore {
   selectAccount: (index: number) => void;
   selectNetwork: (networkId: string) => Promise<void>;
   refreshBalance: () => Promise<void>;
+  refreshTransactions: () => Promise<void>;
   sendTransaction: (to: string, amount: string) => Promise<string>;
   resetWallet: () => Promise<void>;
   clearError: () => void;
@@ -44,6 +53,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   isInitialized: false,
   isUnlocked: false,
   isLoading: true,
+  isLoadingTx: false,
   mnemonic: null,
   accounts: [],
   currentAccountIndex: 0,
@@ -80,13 +90,18 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       await storage.saveVault(vault);
       await storage.setInitialized(true);
 
+      // Create EVM address
       const { address } = createWalletFromMnemonic(mnemonic, 0);
+
+      // Create TRON address
+      const tronWallet = createTronWalletFromMnemonic(mnemonic, 0);
 
       const account: Account = {
         index: 0,
         address,
         name: 'Cuenta 1',
         balances: {},
+        tronAddress: tronWallet.address,
       };
 
       set({
@@ -98,8 +113,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         isLoading: false,
       });
 
-      // Fetch initial balance
+      // Fetch initial balance and transactions
       get().refreshBalance();
+      get().refreshTransactions();
 
       return mnemonic;
     } catch (error) {
@@ -122,13 +138,18 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       await storage.saveVault(vault);
       await storage.setInitialized(true);
 
+      // Create EVM address
       const { address } = createWalletFromMnemonic(mnemonic, 0);
+
+      // Create TRON address
+      const tronWallet = createTronWalletFromMnemonic(mnemonic, 0);
 
       const account: Account = {
         index: 0,
         address,
         name: 'Cuenta 1',
         balances: {},
+        tronAddress: tronWallet.address,
       };
 
       set({
@@ -141,6 +162,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       });
 
       get().refreshBalance();
+      get().refreshTransactions();
     } catch (error) {
       console.error('Import wallet error:', error);
       const message = error instanceof Error ? error.message : 'Error al importar la wallet';
@@ -165,14 +187,18 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         return false;
       }
 
-      // Derive accounts (for now just one, but could store account count)
+      // Create EVM address
       const { address } = createWalletFromMnemonic(mnemonic, 0);
+
+      // Create TRON address
+      const tronWallet = createTronWalletFromMnemonic(mnemonic, 0);
 
       const account: Account = {
         index: 0,
         address,
         name: 'Cuenta 1',
         balances: {},
+        tronAddress: tronWallet.address,
       };
 
       set({
@@ -183,6 +209,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       });
 
       get().refreshBalance();
+      get().refreshTransactions();
       return true;
     } catch (error) {
       console.error('Unlock error:', error);
@@ -206,12 +233,14 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
     const newIndex = accounts.length;
     const { address } = createWalletFromMnemonic(mnemonic, newIndex);
+    const tronWallet = createTronWalletFromMnemonic(mnemonic, newIndex);
 
     const newAccount: Account = {
       index: newIndex,
       address,
       name: `Cuenta ${newIndex + 1}`,
       balances: {},
+      tronAddress: tronWallet.address,
     };
 
     set({ accounts: [...accounts, newAccount] });
@@ -222,6 +251,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   selectAccount: (index: number) => {
     set({ currentAccountIndex: index });
     get().refreshBalance();
+    get().refreshTransactions();
   },
 
   // Select network
@@ -229,6 +259,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     await storage.saveSelectedNetwork(networkId);
     set({ selectedNetwork: networkId });
     get().refreshBalance();
+    get().refreshTransactions();
   },
 
   // Refresh balance
@@ -238,7 +269,17 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     if (!account) return;
 
     try {
-      const balance = await getBalance(account.address, selectedNetwork);
+      let balance: string;
+
+      if (isTronNetwork(selectedNetwork)) {
+        // Get TRON balance
+        balance = account.tronAddress
+          ? await getTronBalance(account.tronAddress)
+          : '0';
+      } else {
+        // Get EVM balance
+        balance = await getBalance(account.address, selectedNetwork);
+      }
 
       const updatedAccounts = [...accounts];
       updatedAccounts[currentAccountIndex] = {
@@ -255,51 +296,130 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     }
   },
 
+  // Refresh transactions from blockchain
+  refreshTransactions: async () => {
+    const { accounts, currentAccountIndex, selectedNetwork } = get();
+    const account = accounts[currentAccountIndex];
+    if (!account) return;
+
+    try {
+      set({ isLoadingTx: true });
+
+      const address = isTronNetwork(selectedNetwork)
+        ? account.tronAddress
+        : account.address;
+
+      if (!address) {
+        set({ isLoadingTx: false });
+        return;
+      }
+
+      const txs = await fetchTransactions(
+        account.address,
+        selectedNetwork,
+        account.tronAddress
+      );
+
+      // Merge with local transactions (keep pending ones)
+      const localPending = get().transactions.filter(
+        tx => tx.status === 'pending' && tx.networkId === selectedNetwork
+      );
+
+      const mergedTxs = [...localPending];
+
+      // Add blockchain txs that aren't already in pending
+      txs.forEach(tx => {
+        if (!mergedTxs.some(local => local.hash === tx.hash)) {
+          mergedTxs.push(tx);
+        }
+      });
+
+      // Sort by timestamp descending
+      mergedTxs.sort((a, b) => b.timestamp - a.timestamp);
+
+      set({ transactions: mergedTxs, isLoadingTx: false });
+    } catch (error) {
+      console.error('Refresh transactions error:', error);
+      set({ isLoadingTx: false });
+    }
+  },
+
   // Send transaction
   sendTransaction: async (to: string, amount: string) => {
     const { mnemonic, currentAccountIndex, selectedNetwork, accounts } = get();
     if (!mnemonic) throw new Error('Wallet no desbloqueada');
 
+    const account = accounts[currentAccountIndex];
+    if (!account) throw new Error('Cuenta no encontrada');
+
     try {
       set({ isLoading: true, error: null });
 
-      const { privateKey } = createWalletFromMnemonic(mnemonic, currentAccountIndex);
-      const tx = await sendTx(privateKey, to, amount, selectedNetwork);
+      let txHash: string;
 
-      const transaction: Transaction = {
-        hash: tx.hash,
-        from: accounts[currentAccountIndex].address,
-        to,
-        value: amount,
-        timestamp: Date.now(),
-        status: 'pending',
-        networkId: selectedNetwork,
-        type: 'send',
-      };
+      if (isTronNetwork(selectedNetwork)) {
+        // TRON transaction
+        const { privateKey } = createTronWalletFromMnemonic(mnemonic, currentAccountIndex);
+        const result = await sendTronTransaction(privateKey, to, amount);
+        txHash = result.hash;
 
-      await storage.saveTransaction(transaction);
-      set({
-        transactions: [transaction, ...get().transactions],
-        isLoading: false,
-      });
-
-      // Wait for confirmation
-      const receipt = await tx.wait();
-      if (receipt) {
-        const updatedTx: Transaction = {
-          ...transaction,
-          status: receipt.status === 1 ? 'confirmed' : 'failed',
-          gasUsed: receipt.gasUsed.toString(),
+        const transaction: Transaction = {
+          hash: txHash,
+          from: account.tronAddress || '',
+          to,
+          value: amount,
+          timestamp: Date.now(),
+          status: result.success ? 'confirmed' : 'failed',
+          networkId: selectedNetwork,
+          type: 'send',
         };
 
-        const txs = get().transactions.map(t =>
-          t.hash === tx.hash ? updatedTx : t
-        );
-        set({ transactions: txs });
+        await storage.saveTransaction(transaction);
+        set({
+          transactions: [transaction, ...get().transactions],
+          isLoading: false,
+        });
+      } else {
+        // EVM transaction
+        const { privateKey } = createWalletFromMnemonic(mnemonic, currentAccountIndex);
+        const tx = await sendTx(privateKey, to, amount, selectedNetwork);
+        txHash = tx.hash;
+
+        const transaction: Transaction = {
+          hash: txHash,
+          from: account.address,
+          to,
+          value: amount,
+          timestamp: Date.now(),
+          status: 'pending',
+          networkId: selectedNetwork,
+          type: 'send',
+        };
+
+        await storage.saveTransaction(transaction);
+        set({
+          transactions: [transaction, ...get().transactions],
+          isLoading: false,
+        });
+
+        // Wait for confirmation
+        const receipt = await tx.wait();
+        if (receipt) {
+          const updatedTx: Transaction = {
+            ...transaction,
+            status: receipt.status === 1 ? 'confirmed' : 'failed',
+            gasUsed: receipt.gasUsed.toString(),
+          };
+
+          const txs = get().transactions.map(t =>
+            t.hash === txHash ? updatedTx : t
+          );
+          set({ transactions: txs });
+        }
       }
 
       get().refreshBalance();
-      return tx.hash;
+      return txHash;
     } catch (error) {
       console.error('Send transaction error:', error);
       const message = error instanceof Error ? error.message : 'Error al enviar transaccion';

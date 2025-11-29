@@ -8,6 +8,7 @@ export interface Network {
   iconColor: string;
   decimals: number;
   isTestnet?: boolean;
+  isNonEvm?: boolean; // Para redes como TRON, Solana, etc.
 }
 
 export interface Token {
@@ -32,6 +33,7 @@ export interface Account {
   address: string;
   name: string;
   balances: Record<string, string>;
+  tronAddress?: string; // Direccion de TRON (diferente formato)
 }
 
 export interface Transaction {

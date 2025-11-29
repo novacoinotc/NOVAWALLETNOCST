@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, RefreshCw, Copy, Check, Send, QrCode } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import { useWalletStore } from '@/store/walletStore';
-import { getNetworkById } from '@/lib/networks';
+import { getNetworkById, isTronNetwork } from '@/lib/networks';
 import { formatBalance, formatAddress } from '@/lib/wallet';
 
 interface BalanceCardProps {
@@ -25,9 +25,20 @@ export default function BalanceCard({ onSend, onReceive }: BalanceCardProps) {
 
   const balance = account?.balances[selectedNetwork] || '0';
 
+  // Obtener la direccion correcta segun la red
+  const getCurrentAddress = () => {
+    if (!account) return '';
+    if (isTronNetwork(selectedNetwork)) {
+      return account.tronAddress || '';
+    }
+    return account.address;
+  };
+
+  const currentAddress = getCurrentAddress();
+
   const handleCopyAddress = async () => {
-    if (account) {
-      await navigator.clipboard.writeText(account.address);
+    if (currentAddress) {
+      await navigator.clipboard.writeText(currentAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -58,7 +69,7 @@ export default function BalanceCard({ onSend, onReceive }: BalanceCardProps) {
               onClick={handleCopyAddress}
               className="flex items-center gap-2 text-sm text-foreground/80 hover:text-foreground transition-colors"
             >
-              {formatAddress(account.address)}
+              {formatAddress(currentAddress)}
               {copied ? (
                 <Check className="w-3.5 h-3.5 text-success" />
               ) : (
@@ -80,6 +91,7 @@ export default function BalanceCard({ onSend, onReceive }: BalanceCardProps) {
         <div className="mb-6">
           <div className="flex items-center gap-3">
             <motion.p
+              key={balance}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="text-4xl font-bold neon-text"
@@ -100,6 +112,11 @@ export default function BalanceCard({ onSend, onReceive }: BalanceCardProps) {
           </div>
           <p className="text-sm text-muted mt-1">
             en {network?.name}
+            {network?.isNonEvm && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/20 text-primary rounded">
+                Non-EVM
+              </span>
+            )}
           </p>
         </div>
 

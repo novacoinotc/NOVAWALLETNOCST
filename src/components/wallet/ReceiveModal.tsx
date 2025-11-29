@@ -6,7 +6,7 @@ import { Copy, Check, Share2 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { useWalletStore } from '@/store/walletStore';
-import { getNetworkById } from '@/lib/networks';
+import { getNetworkById, isTronNetwork } from '@/lib/networks';
 
 interface ReceiveModalProps {
   isOpen: boolean;
@@ -19,20 +19,31 @@ export default function ReceiveModal({ isOpen, onClose }: ReceiveModalProps) {
   const account = accounts[currentAccountIndex];
   const network = getNetworkById(selectedNetwork);
 
+  // Obtener la direccion correcta segun la red
+  const getCurrentAddress = () => {
+    if (!account) return '';
+    if (isTronNetwork(selectedNetwork)) {
+      return account.tronAddress || '';
+    }
+    return account.address;
+  };
+
+  const currentAddress = getCurrentAddress();
+
   const handleCopy = async () => {
-    if (account) {
-      await navigator.clipboard.writeText(account.address);
+    if (currentAddress) {
+      await navigator.clipboard.writeText(currentAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
   const handleShare = async () => {
-    if (account && navigator.share) {
+    if (currentAddress && navigator.share) {
       try {
         await navigator.share({
-          title: 'Mi direccion de wallet',
-          text: account.address,
+          title: `Mi direccion de ${network?.name}`,
+          text: currentAddress,
         });
       } catch {
         // User cancelled or share failed
@@ -48,7 +59,7 @@ export default function ReceiveModal({ isOpen, onClose }: ReceiveModalProps) {
         {/* QR Code */}
         <div className="bg-white p-4 rounded-2xl mb-4">
           <QRCodeSVG
-            value={account.address}
+            value={currentAddress}
             size={200}
             level="H"
             includeMargin={false}
@@ -64,12 +75,17 @@ export default function ReceiveModal({ isOpen, onClose }: ReceiveModalProps) {
             style={{ backgroundColor: network?.iconColor }}
           />
           <span className="text-sm">{network?.name}</span>
+          {network?.isNonEvm && (
+            <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
+              Non-EVM
+            </span>
+          )}
         </div>
 
         {/* Address */}
         <div className="w-full bg-secondary rounded-xl p-3 mb-4">
-          <p className="text-xs text-muted mb-1">Tu direccion</p>
-          <p className="text-sm font-mono break-all">{account.address}</p>
+          <p className="text-xs text-muted mb-1">Tu direccion de {network?.name}</p>
+          <p className="text-sm font-mono break-all">{currentAddress}</p>
         </div>
 
         {/* Warning */}
